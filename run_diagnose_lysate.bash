@@ -1,71 +1,88 @@
+#!/bin/bash
 
 set -x
 set -e
 
-outdir="./tmp/crux_lysate_diagnose"
-cruxbinary="/c/Users/Tao Lab/Documents/crux-3.2.Windows.AMD64/bin/crux.exe"
-fastalocation="/c/Users/Tao Lab/Documents/UP000005640_9606.fasta/UP000005640_9606.fasta"
-# fastalocation="/c/Users/Tao Lab/Documents/UP000000589_10090.fasta/UP000000589_10090.fasta" mice_fasta
-# fastalocation="/c/Users/Tao Lab/Documents/UP000006548_3702.fasta/UP000006548_3702.fasta" plant_fasta
-#fastalocation="/c/Users/Tao Lab/Documents/UP000005640_9606.fasta/UP000005640_9606.fasta" homosapient_fasta
+run_crux () {
+  "${STP_CRUXBINARY}" pipeline \
+       --output-dir ${STP_OUTDIR} \
+       --txt-output T \
+       --output_txtfile 1 \
+       --output_pepxmlfile 1 \
+       --verbosity 40 \
+       --variable_mod01 "15.9949 M 0 3 -1 0 0" \
+       --fragment-tolerance 0.02 \
+       --precursor-window 8 \
+       --precursor-window-type ppm \
+       --search-engine comet \
+       --protein-enzyme trypsinp \
+       --protein T \
+       --decoy_search 2 \
+       --overwrite T \
+       --num-threads 2 \
+       "$@" "${STP_FASTA}"
+       #--require_variable_mod 1 \
 
-"${cruxbinary}" pipeline \
-     --output-dir ${outdir} \
-     --txt-output T \
-     --output_txtfile 1 \
-     --output_pepxmlfile 1 \
-     --verbosity 40 \
-     --variable_mod01 "15.9949 M 0 3 -1 0 0" \
-     --fragment-tolerance 0.6 \
-     --precursor-window 8 \
-     --precursor-window-type ppm \
-     --search-engine comet \
-     --protein-enzyme trypsinp \
-     --protein T \
-     --decoy_search 2 \
-     --overwrite T \
-     --num-threads 2 \
-     "$@" "${fastalocation}"
-     #--require_variable_mod 1 \
+  "${STP_CRUXBINARY}" extract-rows percolator.target.peptides.txt \
+      --header T "percolator q-value" \
+      --comparison lt 0.01 > qsig_percolator.target.peptides.txt
 
-cd "${outdir}"
+  "${STP_CRUXBINARY}" extract-rows percolator.target.psms.txt \
+      --header T "percolator q-value" \
+      --comparison lt 0.01 > qsig_percolator.target.psms.txt
 
-"${cruxbinary}" extract-rows percolator.target.peptides.txt \
-    --header T "percolator q-value" \
-    --comparison lt 0.01 > qsig_percolator.target.peptides.txt
-
-"${cruxbinary}" extract-rows percolator.target.psms.txt \
-    --header T "percolator q-value" \
-    --comparison lt 0.01 > qsig_percolator.target.psms.txt
-
-"${cruxbinary}" extract-rows percolator.target.proteins.txt \
-    --header T "q-value" \
-    --comparison lt 0.01 > qsig_percolator.target.proteins.txt
+  "${STP_CRUXBINARY}" extract-rows percolator.target.proteins.txt \
+      --header T "q-value" \
+      --comparison lt 0.01 > qsig_percolator.target.proteins.txt
 
 
-"${cruxbinary}" extract-columns qsig_percolator.target.peptides.txt sequence > modsequences.txt
-"${cruxbinary}" extract-columns qsig_percolator.target.psms.txt sequence > modsequencespsms.txt
-"${cruxbinary}" extract-columns qsig_percolator.target.proteins.txt ProteinGroupId > proteinGroups.txt
+  cd "${STP_OUTDIR}"
+
+  # TODO check if it is posible to just use the path to the file instead of changing
+  # the working diretory
+
+  "${STP_CRUXBINARY}" extract-columns qsig_percolator.target.peptides.txt sequence > modsequences.txt
+  "${STP_CRUXBINARY}" extract-columns qsig_percolator.target.psms.txt sequence > modsequencespsms.txt
+  "${STP_CRUXBINARY}" extract-columns qsig_percolator.target.proteins.txt ProteinGroupId > proteinGroups.txt
+}
+
 
 
 set +x
 set +e
 
-allcommands () {
-     echo "Number of Peptides: "
-     cat modsequencespsms.txt | sort | uniq | wc -l
+report_crux () 
+{
+  scratch=$(mktemp -d -t tmp.cruxreport.XXXXXXXXXX)
+  exitttrap () 
+  {
+    rm -rf "$scratch"
+  }
+  trap exittrap RETURN
+  trap exittrap EXIT
 
-     echo "Unique peptide sequences: "
-     cat modsequences.txt | perl -p -e "s/(\[.*?\])|(\[.*?\])//g" | sort | uniq | wc -l
+  cd "${STP_OUTDIR}"
 
-     echo "Number of protein groups: "
-     cat proteinGroups.txt | sort | uniq | wc -l
+  echo "Number of Peptides: " >> "${scratch}"
+  cat modsequencespsms.txt | sort | uniq | wc -l >> "${scratch}"
+
+  echo "Unique peptide sequences: " >> "${scratch}"
+  cat modsequences.txt | perl -p -e "s/(\[.*?\])|(\[.*?\])//g" \
+    | sort | uniq | wc -l >> "${scratch}"
+
+  echo "Number of protein groups: " >> "${scratch}"
+  cat proteinGroups.txt | sort | uniq | wc -l >> "${scratch}"
+
+  curl -F chat_id="${TARGET_CHAT_ID}" \
+    -F document=@"${scratch}" \
+    https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument
+  curl -F chat_id="${TARGET_CHAT_ID}" \
+    -F text="$( cat "${scratch}") \
+    " https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
 }
 
-allcommands |& tee report_lysate.txt
+report_crux 
 
-curl -F chat_id="${TARGET_CHAT_ID}" -F document=@"report_lysate.txt" https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument
-curl -F chat_id="${TARGET_CHAT_ID}" -F text="$( cat report_lysate.txt) " https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
 
 # TODO, crux writes a line 
 # FATAL: The file ./tmp/crux_lysate_diagnose/comet.target.txt does not exist.

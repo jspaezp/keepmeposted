@@ -3,41 +3,8 @@
 #set -x
 #set -e
 
-REFRESHRATE=30 # Seconds
-LCREFRESHRATE=40 # Minutes
-MINMINS=1 # Minutes
-WARNINGTIME=200 # Minutes
-TIMEBETWEENWARNS=200 # Minutes
-export TELEGRAM_BOT_TOKEN="xxxxxxxxx:xxxxxxxxxxx-xxxxxxxxxxxx_xxxxxxxxxx"
-export TARGET_CHAT_ID="-xxxxxxxxx"
-
-
-if ! [[ $(curl https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates) ]]
-then
-    echo "Bot does not seem to be correctly configured"
-fi
-
-if ! [[ $(ping xxx.xx.x.xxx -n 1 -w 1) ]]
-then
-    echo "LC server does not seem to be connected to the network"
-fi
-
-if ! [[ $(ssh -q hplc@xxx.xx.x.xxx "echo 'Connection Worked'") ]]
-then
-    echo "Cannot Connect Via SSH to the HPLC server"
-fi
-
-if ! [[ $(which mspicture.exe) ]]
-then
-    echo "MSPICTURE does not seem to be in the path, it will not send the heatmaps"
-fi
-
-if false
-then
-    find . -regex ".*lysate.*.raw" -mmin -100 \
-                -exec bash run_diagnose_lysate.bash {} \;
-    exit
-fi
+source ./private/credentials.bash
+source ./checks.bash
 
 CURRENTSETTINGS=$(echo "
 Telegram Bot Connected
@@ -76,9 +43,10 @@ while true; do
            https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
 
         # Makes the pictures of the XIC
+        # TODO ADD HERE A NEW TEMP DIRECTORY AND AN EXIT TRAP
         find . -name "*.raw" -size +10M -newer ./tmp/.flag.flag -mmin +"${MINMINS}" -exec \
             mspicture.exe -z 1 --binSum --mzLow 300 --mzHigh 1500\
-            -w 400 --height 1200 \
+            -w 600 --height 1400 \
             --outdir ./tmp {} \;
         
         # This loop is necessary because mspicture might output several images

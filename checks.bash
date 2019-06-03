@@ -1,0 +1,28 @@
+#!/bin/bash
+
+if ! [[ $(curl https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates) ]]
+then
+    echo "Bot does not seem to be correctly configured"
+fi
+
+if ! [[ $(ping xxx.xx.x.xxx -n 1 -w 1) ]]
+then
+    echo "LC server does not seem to be connected to the network"
+fi
+
+if ! [[ $(ssh -q hplc@xxx.xx.x.xxx "echo 'Connection Worked'") ]]
+then
+    echo "Cannot Connect Via SSH to the HPLC server"
+fi
+
+if ! [[ $(which mspicture.exe) ]]
+then
+    echo "MSPICTURE does not seem to be in the path, it will not send the heatmaps"
+fi
+
+if false
+then
+    find . -regex ".*lysate.*.raw" -mmin -100 \
+                -exec bash run_diagnose_lysate.bash {} \;
+    exit
+fi
