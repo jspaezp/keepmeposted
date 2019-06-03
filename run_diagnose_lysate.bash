@@ -21,7 +21,6 @@ run_crux () {
        --overwrite T \
        --num-threads 2 \
        "$@" "${STP_FASTA}"
-       #--require_variable_mod 1 \
 
   "${STP_CRUXBINARY}" extract-rows percolator.target.peptides.txt \
       --header T "percolator q-value" \
@@ -46,7 +45,7 @@ run_crux () {
   "${STP_CRUXBINARY}" extract-columns qsig_percolator.target.proteins.txt ProteinGroupId > proteinGroups.txt
 }
 
-
+run_crux "$@"
 
 set +x
 set +e
