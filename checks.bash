@@ -5,12 +5,12 @@ then
     echo "Bot does not seem to be correctly configured"
 fi
 
-if ! [[ $(ping xxx.xx.x.xxx -n 1 -w 1) ]]
+if ! [[ $(ping "${LC_SERVER}" -n 1 -w 1) ]]
 then
     echo "LC server does not seem to be connected to the network"
 fi
 
-if ! [[ $(ssh -q hplc@xxx.xx.x.xxx "echo 'Connection Worked'") ]]
+if ! [[ $(ssh -q "${LC_USER}@${LC_SERVER}" "echo 'Connection Worked'") ]]
 then
     echo "Cannot Connect Via SSH to the HPLC server"
 fi

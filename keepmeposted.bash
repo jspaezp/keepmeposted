@@ -1,10 +1,12 @@
 #!bin/bash
 
-#set -x
-#set -e
+set -e
+set -x
 
 source ./private/credentials.bash
+source ./setup.bash
 source ./checks.bash
+source ./diagnose_lysate.bash
 
 CURRENTSETTINGS=$(echo "
 Telegram Bot Connected
@@ -18,23 +20,24 @@ curl -F chat_id="${TARGET_CHAT_ID}" \
     https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
 
 check_flags () {
-  if [[ ! -e ./tmp/stdstatus.log ]] ; then touch ./tmp/stdstatus.log ; fi
-  if [[ ! -e ./tmp/.stdstatus.flag ]] ; then touch ./tmp/.stdstatus.flag ; fi
-  if [[ ! -e ./tmp/.flag.flag ]] ; then touch ./tmp/.flag.flag ; fi
-  if [[ ! -e ./tmp/.heatmap.flag ]] ; then touch ./tmp/.heatmap.flag ; fi
-  if [[ ! -e ./tmp/sc.jpg ]] ; then touch ./tmp/sc.jpg ; fi
-  if [[ ! -e ./tmp/message.log ]] ; then touch ./tmp/message.log ; fi
+  if [[ ! -e ${FLAGS_DIR} ]] ; then mkdir ${FLAGS_DIR} ; fi 
+  if [[ ! -e ${FLAGS_DIR}/stdstatus.log ]] ; then touch ${FLAGS_DIR}/stdstatus.log ; fi
+  if [[ ! -e ${FLAGS_DIR}/.stdstatus.flag ]] ; then touch ${FLAGS_DIR}/.stdstatus.flag ; fi
+  if [[ ! -e ${FLAGS_DIR}/.flag.flag ]] ; then touch ${FLAGS_DIR}/.flag.flag ; fi
+  if [[ ! -e ${FLAGS_DIR}/.heatmap.flag ]] ; then touch ${FLAGS_DIR}/.heatmap.flag ; fi
+  if [[ ! -e ${FLAGS_DIR}/sc.jpg ]] ; then touch ${FLAGS_DIR}/sc.jpg ; fi
+  if [[ ! -e ${FLAGS_DIR}/message.log ]] ; then touch ${FLAGS_DIR}/message.log ; fi
 }
 
 screenshot_hplc () {
   ## Takes a screenshot of the hplc
   # Make sure RSA Keys are in place
   # the digital ocean tutorial is good to know how
-  ssh hplc@172.16.0.106 'xwd -root -display :0 | convert - jpg:-  > screenshot.jpg'
-  scp hplc@172.16.0.106:screenshot.jpg ./tmp/sc.jpg
-  touch ./tmp/sc.jpg
+  ssh "${LC_USER}@${LC_SERVER}" 'xwd -root -display :0 | convert - jpg:-  > screenshot.jpg'
+  scp "${LC_USER}@${LC_SERVER}:screenshot.jpg" ${FLAGS_DIR}/sc.jpg
+  touch ${FLAGS_DIR}/sc.jpg
   curl -F chat_id="${TARGET_CHAT_ID}" \
-      -F document=@"./tmp/sc.jpg" \
+      -F document=@"${FLAGS_DIR}/sc.jpg" \
       -F caption="Current Screenshot of the LC" \
       https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument
 }
@@ -47,16 +50,16 @@ send_heatmap () {
   if [[ -f $ms_file ]] 
   then 
     mspicture.exe -z 1 --binSum --mzLow 300 --mzHigh 1500\
-      -w 600 --height 1400 --outdir ./tmp $ms_file
+      -w 600 --height 1400 --outdir ${FLAGS_DIR} $ms_file
       # This loop is necessary because mspicture might output several images
       # When several ms1 scans are defined
-      for i in $( find ./tmp/*.ftms.png -newer ./tmp/.heatmap.flag )
+      for i in $( find ${FLAGS_DIR}/*.ftms.png -newer ${FLAGS_DIR}/.heatmap.flag )
       do 
           echo "${i}" 
           curl -F chat_id="${TARGET_CHAT_ID}" \
               -F document=@"${i}" -F caption="${i}" \
               https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument
-          touch ./tmp/.heatmap.flag
+          touch ${FLAGS_DIR}/.heatmap.flag
       done
   else
     echo "Skipping ${ms_file} because the file does not exist"
@@ -66,7 +69,7 @@ send_heatmap () {
 report_standard () {
   # This Section sends the apexes list
   # TODO sort this in order of elution and perhaps print an expected value
-  echo "" > ./tmp/stdstatus.log
+  echo "" > ${FLAGS_DIR}/stdstatus.log
   echo "Found New Standard, Calculating Peak Apexes"
   msaccess "${@}" \
     -x "sic mzCenter=487.2567 radius=5 radiusUnits=ppm" \
@@ -75,32 +78,35 @@ report_standard () {
     -x "sic mzCenter=636.8692 radius=5 radiusUnits=ppm" \
     -o 'tmp' -v
 
-  echo "Peak Apexes (Retention Time, mins): " | tee --append ./tmp/stdstatus.log
-  echo "" >> ./tmp/stdstatus.log
+  echo "Peak Apexes (Retention Time, mins): " | tee --append ${FLAGS_DIR}/stdstatus.log
+  echo "" >> ${FLAGS_DIR}/stdstatus.log
 
-  APEX_RTS=$(find ./tmp -regex .*.summary.* -newer ./tmp/.stdstatus.flag -exec grep -oP "(?<=apex_rt: )\d+.\d+" {} \;)
-  APEX_INT=$(find ./tmp -regex .*.summary.* -newer ./tmp/.stdstatus.flag -exec grep -oP "(?<=apex_intensity: )\d+" {} \;)
+  APEX_RTS=$(find ${FLAGS_DIR} -regex .*.summary.* -newer ${FLAGS_DIR}/.stdstatus.flag -exec grep -oP "(?<=apex_rt: )\d+.\d+" {} \;)
+  APEX_INT=$(find ${FLAGS_DIR} -regex .*.summary.* -newer ${FLAGS_DIR}/.stdstatus.flag -exec grep -oP "(?<=apex_intensity: )\d+" {} \;)
 
   for i in $APEX_RTS ; do echo print "${i} / 60" | \
-    perl -l | tee --append ./tmp/stdstatus.log ; done
+    perl -l | tee --append ${FLAGS_DIR}/stdstatus.log ; done
 
-  echo "" >> ./tmp/stdstatus.log
-  echo "Apex Intensities (10^6): " | tee --append ./tmp/stdstatus.log
-  echo "" >> ./tmp/stdstatus.log
+  echo "" >> ${FLAGS_DIR}/stdstatus.log
+  echo "Apex Intensities (10^6): " | tee --append ${FLAGS_DIR}/stdstatus.log
+  echo "" >> ${FLAGS_DIR}/stdstatus.log
 
   for i in $APEX_INT ; do echo print "${i} / 1000000" | \
-    perl -l | tee --append ./tmp/stdstatus.log ; done
+    perl -l | tee --append ${FLAGS_DIR}/stdstatus.log ; done
 
-  curl -F chat_id="${TARGET_CHAT_ID}" -F text="$(cat ./tmp/stdstatus.log)" \
+  curl -F chat_id="${TARGET_CHAT_ID}" -F text="$(cat ${FLAGS_DIR}/stdstatus.log)" \
          https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
 
-  touch ./tmp/.stdstatus.flag
+  date >> ${FLAGS_DIR}/perm_stdstatus.log
+  cat ${FLAGS_DIR}/stdstatus.log >> ${FLAGS_DIR}/perm_stdstatus.log
+
+  touch ${FLAGS_DIR}/.stdstatus.flag
 }
 
 while true; do
     check_flags
 
-    if [[ $(find ./tmp/sc.jpg -mmin +"${LCREFRESHRATE}") ]]
+    if [[ $(find ${FLAGS_DIR}/sc.jpg -mmin +"${LCREFRESHRATE}") ]]
     then 
       screenshot_hplc
     fi
@@ -109,47 +115,51 @@ while true; do
     
     # Tries to find new files (more than 10 mb in size, newer than the last flag and mod more than a minute ago)
     # The more than a minute ago just prevents this to be triggered while the file is being scanned/generated
-    new_ms_files=$(find . -name "*.raw" -size +10M -newer ./tmp/.flag.flag -mmin +"${MINMINS}")
+    new_ms_files=$(find "${DATA_DIR}" -name "*.raw" -size +10M -newer ${FLAGS_DIR}/.flag.flag -mmin +"${MINMINS}")
 
     if [[ -n "${new_ms_files}" ]]
     then
-        ls -lcth $new_ms_files |& tee ./tmp/message.log
+        ls -lcth $new_ms_files |& tee ${FLAGS_DIR}/message.log
         echo "Found Something"
 
         curl -F chat_id="${TARGET_CHAT_ID}" -F text="New File Found in the directory" \
             https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
-        curl -F chat_id="${TARGET_CHAT_ID}" -F text="$(cat ./tmp/message.log)" \
+        curl -F chat_id="${TARGET_CHAT_ID}" -F text="$(cat ${FLAGS_DIR}/message.log)" \
            https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
 
-        for ms_file in $new_ms_files 
+        for ms_file in $( echo $new_ms_files | grep -vP "std" | grep -vP "lysate.*.raw" )
         do
-          send_heatmap
+          send_heatmap "${ms_file}"
+          run_crux "${ms_file}"
+          report_crux "${ms_file}"
         done
         
-        for standard_name in $(echo $new_ms_files | grep -P "Standard")
+        for standard_name in $(echo $new_ms_files | grep -P "std")
         do
           report_standard "${standard_name}"
         done
 
-        for standard_name in $(echo $new_ms_files | grep -P "lysate.*.raw")
+        for standard_name in $(echo $new_ms_files  | grep -P "lysate.*.raw")
         do
+          "${standard_name}"
             # TODO find a way to store the lysate info or any output of find for that purpose
             echo "Found new lysate, running comet"
-            echo "" > ./tmp/lysatestatus.log
-            bash run_diagnose_lysate.bash "${standard_name}"
+
+            run_crux "${standard_name}"
+            report_crux "${standard_name}"
         done
 
         # Renews the mod date of the log file
-        touch ./tmp/.flag.flag
+        touch ${FLAGS_DIR}/.flag.flag
     
     # Warning section when too long has passed without modifications
-    elif ! [[ $(find . -name "*.raw" -mmin -"${WARNINGTIME}") ]]
+    elif ! [[ $(find "${DATA_DIR}" -name "*.raw" -mmin -"${WARNINGTIME}") ]]
     then
         echo "There Seems to be inactivity"
-        if ! [[ $(find ./tmp/.warningflag.flag -mmin -"${TIMEBETWEENWARNS}") ]]
+        if ! [[ $(find ${FLAGS_DIR}/.warningflag.flag -mmin -"${TIMEBETWEENWARNS}") ]]
         then
             echo "Sending Warning due to inactivity"
-            touch ./tmp/.warningflag.flag
+            touch ${FLAGS_DIR}/.warningflag.flag
             curl -F chat_id="${TARGET_CHAT_ID}" \
                 -F text="No new changes in ${WARNINGTIME} minutes,\
                 you might want to check what went on ..." \
