@@ -77,31 +77,30 @@ run_crux () {
 
 report_crux () {
   scratch=$(mktemp -d -t tmp.cruxreport.XXXXXXXXXX)
+  out_file=$(mktemp -p ${scratch} -t tmp.cruxreport.XXXXXXXXXX)
 
-  trap "removing ${scratch} ; rm -rf \"$scratch\"" RETURN
-  trap "removing ${scratch} ; rm -rf \"${scratch}\"" RETURN
+  trap "echo \"removing ${scratch}\" ; rm -rf \"${scratch}\"" RETURN
+  trap "echo \"removing ${scratch}\" ; rm -rf \"${scratch}\"" RETURN
 
-  cd "${STP_OUTDIR_CRUX}"
-
-  echo "Number of Peptides: " >> "${scratch}"
+  echo "Number of Peptides: " >> "${out_file}"
   cat ${STP_OUTDIR_CRUX}/modsequencespsms.txt | \
-      sort | uniq | wc -l >> "${scratch}"
+      sort | uniq | wc -l >> "${out_file}"
 
-  echo "Unique peptide sequences: " >> "${scratch}"
+  echo "Unique peptide sequences: " >> "${out_file}"
   cat ${STP_OUTDIR_CRUX}/modsequences.txt | \
       perl -p -e "s/(\[.*?\])|(\[.*?\])//g" | \
-      sort | uniq | wc -l >> "${scratch}"
+      sort | uniq | wc -l >> "${out_file}"
 
-  echo "Number of protein groups: " >> "${scratch}"
+  echo "Number of protein groups: " >> "${out_file}"
   cat ${STP_OUTDIR_CRUX}/proteinGroups.txt | \
-      sort | uniq | wc -l >> "${scratch}"
+      sort | uniq | wc -l >> "${out_file}"
 
   curl -F chat_id="${TARGET_CHAT_ID}" \
-    -F document=@"${scratch}" \
+    -F document=@"${out_file}" \
     https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument
 
   curl -F chat_id="${TARGET_CHAT_ID}" \
-    -F text="$( cat "${scratch}")" \
+    -F text="$( cat "${out_file}")" \
     https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
 }
 

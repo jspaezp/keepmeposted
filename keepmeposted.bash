@@ -111,7 +111,7 @@ while true; do
       screenshot_hplc
     fi
 
-    sleep "${REFRESHRATE}"
+    [[ -z "${FIRST_PASS_DONE}" ]] && FIRST_PASS_DONE=1 || sleep "${REFRESHRATE}"
     
     # Tries to find new files (more than 10 mb in size, newer than the last flag and mod more than a minute ago)
     # The more than a minute ago just prevents this to be triggered while the file is being scanned/generated
@@ -142,7 +142,6 @@ while true; do
         for standard_name in $(echo $new_ms_files  | grep -P "lysate.*.raw")
         do
           send_heatmap "${standard_name}"
-          # TODO find a way to store the lysate info or any output of find for that purpose
           echo "Found new lysate, running comet"
 
           run_crux "${standard_name}"
