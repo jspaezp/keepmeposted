@@ -141,12 +141,12 @@ while true; do
 
         for standard_name in $(echo $new_ms_files  | grep -P "lysate.*.raw")
         do
-          "${standard_name}"
-            # TODO find a way to store the lysate info or any output of find for that purpose
-            echo "Found new lysate, running comet"
+          send_heatmap "${standard_name}"
+          # TODO find a way to store the lysate info or any output of find for that purpose
+          echo "Found new lysate, running comet"
 
-            run_crux "${standard_name}"
-            report_crux "${standard_name}"
+          run_crux "${standard_name}"
+          report_crux "${standard_name}"
         done
 
         # Renews the mod date of the log file

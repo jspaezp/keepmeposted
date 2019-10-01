@@ -77,13 +77,11 @@ run_crux () {
 
 report_crux () {
   scratch=$(mktemp -d -t tmp.cruxreport.XXXXXXXXXX)
-  exitttrap () {
-    rm -rf "$scratch"
-  }
-  trap exittrap RETURN
-  trap exittrap EXIT
 
-  cd "${STP_OUTDIR}"
+  trap "removing ${scratch} ; rm -rf \"$scratch\"" RETURN
+  trap "removing ${scratch} ; rm -rf \"${scratch}\"" RETURN
+
+  cd "${STP_OUTDIR_CRUX}"
 
   echo "Number of Peptides: " >> "${scratch}"
   cat ${STP_OUTDIR_CRUX}/modsequencespsms.txt | \
