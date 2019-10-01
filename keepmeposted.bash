@@ -69,6 +69,12 @@ send_heatmap () {
 report_standard () {
   # This Section sends the apexes list
   # TODO sort this in order of elution and perhaps print an expected value
+  SCRATCH=$(mktemp -d -t tmp.cruxreport.XXXXXXXXXX)
+
+  trap "echo \"removing ${SCRATCH}\" ; rm -rf \"${SCRATCH}\"" RETURN
+  trap "echo \"removing ${SCRATCH}\" ; rm -rf \"${SCRATCH}\"" RETURN
+
+
   echo "" > ${FLAGS_DIR}/stdstatus.log
   echo "Found New Standard, Calculating Peak Apexes"
   msaccess "${@}" \
@@ -76,13 +82,13 @@ report_standard () {
     -x "sic mzCenter=669.8381 radius=5 radiusUnits=ppm" \
     -x "sic mzCenter=622.8535 radius=5 radiusUnits=ppm" \
     -x "sic mzCenter=636.8692 radius=5 radiusUnits=ppm" \
-    -o 'tmp' -v
+    -o "${SCRATCH}" -v
 
   echo "Peak Apexes (Retention Time, mins): " | tee --append ${FLAGS_DIR}/stdstatus.log
   echo "" >> ${FLAGS_DIR}/stdstatus.log
 
-  APEX_RTS=$(find ${FLAGS_DIR} -regex .*.summary.* -newer ${FLAGS_DIR}/.stdstatus.flag -exec grep -oP "(?<=apex_rt: )\d+.\d+" {} \;)
-  APEX_INT=$(find ${FLAGS_DIR} -regex .*.summary.* -newer ${FLAGS_DIR}/.stdstatus.flag -exec grep -oP "(?<=apex_intensity: )\d+" {} \;)
+  APEX_RTS=$(find ${SCRATCH} -regex .*.summary.* -exec grep -oP "(?<=apex_rt: )\d+.\d+" {} \;)
+  APEX_INT=$(find ${SCRATCH} -regex .*.summary.* -exec grep -oP "(?<=apex_intensity: )\d+" {} \;)
 
   for i in $APEX_RTS ; do echo print "${i} / 60" | \
     perl -l | tee --append ${FLAGS_DIR}/stdstatus.log ; done
