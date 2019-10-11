@@ -3,7 +3,7 @@
 run_crux () {
 
   if [[ -e "$@" ]]; then
-    FASTA_FILE=$(find $(dirname "$@") -regex ".*fasta$")
+    FASTA_FILE=$(find $(dirname "$@") -maxdepth 1 -regex ".*fasta$")
     if [[ ! -e "${FASTA_FILE}" ]]; then
       echo "Unable to find a correct fasta file for the search, returning to default"
       FASTA_FILE="${STP_FASTA}"
@@ -12,13 +12,16 @@ run_crux () {
       echo "${FASTA_FILE}"
     fi
   else
-    exit 0
+    return 1
   fi
 
   if [[ -e "$@" ]]; then
-    PARAMS_FILE=$(find $(dirname "$@") -regex ".*params$")
-    echo "Found parameters file in directory, will use it for search"
-    echo "${PARAMS_FILE}"
+    PARAMS_FILE=$(find $(dirname "$@") -maxdepth 1 -regex ".*params$" )
+
+    if [[ ! -e "${PARAMS_FILE}" ]]; then
+      echo "Found parameters file in directory, will use it for search"
+      echo "${PARAMS_FILE}"
+    fi
   fi
 
   "${STP_CRUXBINARY}" pipeline \

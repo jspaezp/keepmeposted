@@ -63,6 +63,7 @@ send_heatmap () {
       done
   else
     echo "Skipping ${ms_file} because the file does not exist"
+    return 0
   fi
 }
 
@@ -75,7 +76,7 @@ report_standard () {
   trap "echo \"removing ${SCRATCH}\" ; rm -rf \"${SCRATCH}\"" RETURN
 
 
-  echo "" > ${FLAGS_DIR}/stdstatus.log
+  echo "${@}" > ${FLAGS_DIR}/stdstatus.log
   echo "Found New Standard, Calculating Peak Apexes"
   msaccess "${@}" \
     -x "sic mzCenter=487.2567 radius=5 radiusUnits=ppm" \
@@ -109,72 +110,77 @@ report_standard () {
   touch ${FLAGS_DIR}/.stdstatus.flag
 }
 
-while true; do
-    check_flags
+main_loop () {
+  while true; do
+      check_flags
 
-    if [[ $(find ${FLAGS_DIR}/sc.jpg -mmin +"${LCREFRESHRATE}") ]]
-    then 
-      screenshot_hplc
-    fi
+      if [[ $(find ${FLAGS_DIR}/sc.jpg -mmin +"${LCREFRESHRATE}") ]]
+      then 
+        screenshot_hplc
+      fi
 
-    [[ -z "${FIRST_PASS_DONE}" ]] && FIRST_PASS_DONE=1 || sleep "${REFRESHRATE}"
-    
-    # Tries to find new files (more than 10 mb in size, newer than the last flag and mod more than a minute ago)
-    # The more than a minute ago just prevents this to be triggered while the file is being scanned/generated
-    new_ms_files=$(find "${DATA_DIR}" -name "*.raw" -size +10M -newer ${FLAGS_DIR}/.flag.flag -mmin +"${MINMINS}")
+      [[ -z "${FIRST_PASS_DONE}" ]] && FIRST_PASS_DONE=1 || sleep "${REFRESHRATE}"
+      
+      # Tries to find new files (more than 10 mb in size, newer than the last flag and mod more than a minute ago)
+      # The more than a minute ago just prevents this to be triggered while the file is being scanned/generated
+      new_ms_files=$(find "${DATA_DIR}" -name "*.raw" -size +10M -newer ${FLAGS_DIR}/.flag.flag -mmin +"${MINMINS}")
 
-    if [[ -n "${new_ms_files}" ]]
-    then
-        ls -lcth $new_ms_files |& tee ${FLAGS_DIR}/message.log
-        echo "Found Something"
+      if [[ -n "${new_ms_files}" ]]
+      then
+          ls -lcth $new_ms_files |& tee ${FLAGS_DIR}/message.log
+          echo "Found Something"
 
-        curl -F chat_id="${TARGET_CHAT_ID}" -F text="New File Found in the directory" \
-            https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
-        curl -F chat_id="${TARGET_CHAT_ID}" -F text="$(cat ${FLAGS_DIR}/message.log)" \
-           https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
+          curl -F chat_id="${TARGET_CHAT_ID}" -F text="New File Found in the directory" \
+              https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
+          curl -F chat_id="${TARGET_CHAT_ID}" -F text="$(cat ${FLAGS_DIR}/message.log)" \
+             https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
 
-        for ms_file in $( echo $new_ms_files | grep -vP "std" | grep -vP "lysate.*.raw" )
-        do
-          send_heatmap "${ms_file}"
-          run_crux "${ms_file}"
-          report_crux "${ms_file}"
-        done
-        
-        for standard_name in $(echo $new_ms_files | grep -P "std")
-        do
-          report_standard "${standard_name}"
-        done
+          for ms_file in $( for i in $new_ms_files ; do echo "${i}" | grep -vP "std" | grep -vP "lysate.*.raw" ; done )
+          do
+            echo "Running steps for ${ms_file}"
 
-        for standard_name in $(echo $new_ms_files  | grep -P "lysate.*.raw")
-        do
-          send_heatmap "${standard_name}"
-          echo "Found new lysate, running comet"
+            send_heatmap "${ms_file}"
+            run_crux "${ms_file}"  && report_crux "${ms_file}"
+          done
+          
+          for irt_standard_name in $( for i in $new_ms_files ; do echo "${i}" | grep -P "std" ; done )
+          do
+            echo "Running report for ${irt_standard_name}"
+            report_standard "${irt_standard_name}"
+          done
 
-          run_crux "${standard_name}"
-          report_crux "${standard_name}"
-        done
+          for std_lysate_name in $( for i in $new_ms_files ; do echo "${i}"  | grep -P "lysate.*.raw" ; done )
+          do
+            send_heatmap "${std_lysate_name}"
+            echo "Found new lysate, running comet"
 
-        # Renews the mod date of the log file
-        touch ${FLAGS_DIR}/.flag.flag
-    
-    # Warning section when too long has passed without modifications
-    elif ! [[ $(find "${DATA_DIR}" -name "*.raw" -mmin -"${WARNINGTIME}") ]]
-    then
-        echo "There Seems to be inactivity"
-        if ! [[ $(find ${FLAGS_DIR}/.warningflag.flag -mmin -"${TIMEBETWEENWARNS}") ]]
-        then
-            echo "Sending Warning due to inactivity"
-            touch ${FLAGS_DIR}/.warningflag.flag
-            curl -F chat_id="${TARGET_CHAT_ID}" \
-                -F text="No new changes in ${WARNINGTIME} minutes,\
-                you might want to check what went on ..." \
-                https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
-        fi 
-    else
-        echo "Nothing New"
-    fi
-done
+            run_crux "${std_lysate_name}" && report_crux "${std_lysate_name}"
+          done
 
+          # Renews the mod date of the log file
+          touch ${FLAGS_DIR}/.flag.flag
+      
+      # Warning section when too long has passed without modifications
+      elif ! [[ $(find "${DATA_DIR}" -name "*.raw" -mmin -"${WARNINGTIME}") ]]
+      then
+          echo "There Seems to be inactivity"
+          if ! [[ $(find ${FLAGS_DIR}/.warningflag.flag -mmin -"${TIMEBETWEENWARNS}") ]]
+          then
+              echo "Sending Warning due to inactivity"
+              touch ${FLAGS_DIR}/.warningflag.flag
+              curl -F chat_id="${TARGET_CHAT_ID}" \
+                  -F text="No new changes in ${WARNINGTIME} minutes,\
+                  you might want to check what went on ..." \
+                  https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
+          fi 
+      else
+          echo "Nothing New"
+      fi
+  done
+}
+
+
+main_loop || env
 
 # TODO 
 # During sample loading, a raw file of size 34 kb is generated and not modified until it starts scanning
