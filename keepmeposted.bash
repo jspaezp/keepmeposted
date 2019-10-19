@@ -7,6 +7,7 @@ source ./private/credentials.bash
 source ./setup.bash
 source ./checks.bash
 source ./diagnose_lysate.bash
+source ./standard_report.bash
 
 CURRENTSETTINGS=$(echo "
 Telegram Bot Connected
@@ -49,7 +50,7 @@ send_heatmap () {
 
   if [[ -f $ms_file ]] 
   then 
-    mspicture.exe -z 1 --binSum --mzLow 300 --mzHigh 1500\
+    mspicture.exe -z 1 --binSum --mzLow 300 --mzHigh 1500 \
       -w 600 --height 1400 --outdir ${FLAGS_DIR} $ms_file
       # This loop is necessary because mspicture might output several images
       # When several ms1 scans are defined
@@ -67,52 +68,11 @@ send_heatmap () {
   fi
 }
 
-report_standard () {
-  # This Section sends the apexes list
-  # TODO sort this in order of elution and perhaps print an expected value
-  SCRATCH=$(mktemp -d -t tmp.cruxreport.XXXXXXXXXX)
 
-  trap "echo \"removing ${SCRATCH}\" ; rm -rf \"${SCRATCH}\"" RETURN
-  trap "echo \"removing ${SCRATCH}\" ; rm -rf \"${SCRATCH}\"" RETURN
-
-
-  echo "${@}" > ${FLAGS_DIR}/stdstatus.log
-  echo "Found New Standard, Calculating Peak Apexes"
-  msaccess "${@}" \
-    -x "sic mzCenter=487.2567 radius=5 radiusUnits=ppm" \
-    -x "sic mzCenter=669.8381 radius=5 radiusUnits=ppm" \
-    -x "sic mzCenter=622.8535 radius=5 radiusUnits=ppm" \
-    -x "sic mzCenter=636.8692 radius=5 radiusUnits=ppm" \
-    -o "${SCRATCH}" -v
-
-  echo "Peak Apexes (Retention Time, mins): " | tee --append ${FLAGS_DIR}/stdstatus.log
-  echo "" >> ${FLAGS_DIR}/stdstatus.log
-
-  APEX_RTS=$(find ${SCRATCH} -regex .*.summary.* -exec grep -oP "(?<=apex_rt: )\d+.\d+" {} \;)
-  APEX_INT=$(find ${SCRATCH} -regex .*.summary.* -exec grep -oP "(?<=apex_intensity: )\d+" {} \;)
-
-  for i in $APEX_RTS ; do echo print "${i} / 60" | \
-    perl -l | tee --append ${FLAGS_DIR}/stdstatus.log ; done
-
-  echo "" >> ${FLAGS_DIR}/stdstatus.log
-  echo "Apex Intensities (10^6): " | tee --append ${FLAGS_DIR}/stdstatus.log
-  echo "" >> ${FLAGS_DIR}/stdstatus.log
-
-  for i in $APEX_INT ; do echo print "${i} / 1000000" | \
-    perl -l | tee --append ${FLAGS_DIR}/stdstatus.log ; done
-
-  curl -F chat_id="${TARGET_CHAT_ID}" -F text="$(cat ${FLAGS_DIR}/stdstatus.log)" \
-         https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
-
-  date >> ${FLAGS_DIR}/perm_stdstatus.log
-  cat ${FLAGS_DIR}/stdstatus.log >> ${FLAGS_DIR}/perm_stdstatus.log
-
-  touch ${FLAGS_DIR}/.stdstatus.flag
-}
 
 main_loop () {
   while true; do
-      check_flags
+      date
 
       if [[ $(find ${FLAGS_DIR}/sc.jpg -mmin +"${LCREFRESHRATE}") ]]
       then 
@@ -127,6 +87,9 @@ main_loop () {
 
       if [[ -n "${new_ms_files}" ]]
       then
+          # Renews the mod date of the log file
+          touch ${FLAGS_DIR}/.flag.flag
+
           ls -lcth $new_ms_files |& tee ${FLAGS_DIR}/message.log
           echo "Found Something"
 
@@ -135,12 +98,24 @@ main_loop () {
           curl -F chat_id="${TARGET_CHAT_ID}" -F text="$(cat ${FLAGS_DIR}/message.log)" \
              https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
 
-          for ms_file in $( for i in $new_ms_files ; do echo "${i}" | grep -vP "std" | grep -vP "lysate.*.raw" ; done )
+          standard_files=$( for i in $new_ms_files ; do echo "${i}" | grep -P "Standards" ; done )
+          wash_files=$( for i in $standard_files ; do echo "${i}" | grep -P "wash" ; done )
+          non_wash_standard_files=$( for i in $standard_files ; do echo "${i}" | grep -vP "wash" ; done )
+          lysate_standards=$( for i in $non_wash_standard_files ; do echo "${i}" | grep -P "lysate.*.raw" ; done )
+          non_standard_files=$( for i in $new_ms_files ; do echo "${i}" | grep -vP "Standards" ; done )
+
+          for wash_file in $( for i in $wash_files ; do echo "${i}" ; done )
+          do
+            echo "Sending heatmap for ${wash_file}"
+            send_heatmap "${wash_file}"
+          done
+
+          for ms_file in $( for i in $non_standard_files ; do echo "${i}" ; done )
           do
             echo "Running steps for ${ms_file}"
 
             send_heatmap "${ms_file}"
-            run_crux "${ms_file}"  && report_crux "${ms_file}"
+            run_crux "${ms_file}" && report_crux "${ms_file}"
           done
           
           for irt_standard_name in $( for i in $new_ms_files ; do echo "${i}" | grep -P "std" ; done )
@@ -149,7 +124,7 @@ main_loop () {
             report_standard "${irt_standard_name}"
           done
 
-          for std_lysate_name in $( for i in $new_ms_files ; do echo "${i}"  | grep -P "lysate.*.raw" ; done )
+          for std_lysate_name in $( for i in $lysate_standards ; do echo "${i}" ; done )
           do
             send_heatmap "${std_lysate_name}"
             echo "Found new lysate, running comet"
@@ -157,9 +132,6 @@ main_loop () {
             run_crux "${std_lysate_name}" && report_crux "${std_lysate_name}"
           done
 
-          # Renews the mod date of the log file
-          touch ${FLAGS_DIR}/.flag.flag
-      
       # Warning section when too long has passed without modifications
       elif ! [[ $(find "${DATA_DIR}" -name "*.raw" -mmin -"${WARNINGTIME}") ]]
       then
@@ -179,8 +151,13 @@ main_loop () {
   done
 }
 
+check_flags
 
-main_loop || env
+main_loop || { 
+  env 
+  curl -F chat_id="${TARGET_CHAT_ID}" \
+    -F text="Main Loop finished, check if something went wrong" \
+    https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage ; }
 
 # TODO 
 # During sample loading, a raw file of size 34 kb is generated and not modified until it starts scanning

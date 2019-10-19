@@ -20,6 +20,14 @@ then
     echo "MSPICTURE does not seem to be in the path, it will not send the heatmaps"
 fi
 
+if [[ -e "${STP_DEF_CRUXPARAMS}" ]]
+then
+    echo "Found ${STP_DEF_CRUXPARAMS}; using it as the default crux parameters file"
+else
+	echo "Unable to find the defined crux parameters: ${STP_DEF_CRUXPARAMS}"
+fi
+
+
 if false
 then
     find . -regex ".*lysate.*.raw" -mmin -100 \

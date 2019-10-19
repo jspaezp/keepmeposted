@@ -4,12 +4,13 @@ run_crux () {
 
   if [[ -e "$@" ]]; then
     FASTA_FILE=$(find $(dirname "$@") -maxdepth 1 -regex ".*fasta$")
-    if [[ ! -e "${FASTA_FILE}" ]]; then
-      echo "Unable to find a correct fasta file for the search, returning to default"
-      FASTA_FILE="${STP_FASTA}"
-    else
+    if [[ -e "${FASTA_FILE}" ]]; then
       echo "Found fasta file in directory, will use it for search"
       echo "${FASTA_FILE}"
+    else
+      echo "Unable to find a correct fasta file for the search, returning to default"
+      FASTA_FILE="${STP_FASTA}"
+      DEFAULTED_FASTA=1     
     fi
   else
     return 1
@@ -18,30 +19,29 @@ run_crux () {
   if [[ -e "$@" ]]; then
     PARAMS_FILE=$(find $(dirname "$@") -maxdepth 1 -regex ".*params$" )
 
-    if [[ ! -e "${PARAMS_FILE}" ]]; then
+    if [[ -e "${PARAMS_FILE}" ]]; then
       echo "Found parameters file in directory, will use it for search"
       echo "${PARAMS_FILE}"
+    else
+      PARAMS_FILE="${STP_DEF_CRUXPARAMS}"
+      echo "Not found parameters file in directory, will use the default"
+      echo "${PARAMS_FILE}"
+      DEFAULTED_PARAMS=1
     fi
   fi
 
+  [[ $DEFAULTED_PARAMS == 1 && $DEFAULTED_FASTA == 1 ]] && return 1
+
   "${STP_CRUXBINARY}" pipeline \
-       --output-dir ${STP_OUTDIR_CRUX} \
-       --txt-output T \
-       --output_txtfile 1 \
-       --output_pepxmlfile 1 \
-       --verbosity 40 \
-       --variable_mod01 "15.9949 M 0 3 -1 0 0" \
-       --fragment-tolerance 0.6 \
-       --precursor-window 8 \
-       --precursor-window-type ppm \
-       --search-engine comet \
-       --protein-enzyme trypsinp \
-       --protein T \
-       --decoy_search 2 \
-       --overwrite T \
-       --num-threads 2 \
-       --parameter-file "${PARAMS_FILE}" \
-       "$@" "${FASTA_FILE}"
+      --output-dir ${STP_OUTDIR_CRUX} \
+      --txt-output T \
+      --output_txtfile 1 \
+      --output_pepxmlfile 1 \
+      --protein T \
+      --decoy_search 2 \
+      --overwrite T \
+      --parameter-file "${PARAMS_FILE}" \
+      "$@" "${FASTA_FILE}"
 
   "${STP_CRUXBINARY}" extract-rows \
       ${STP_OUTDIR_CRUX}/percolator.target.peptides.txt \
@@ -83,7 +83,6 @@ report_crux () {
   out_file=$(mktemp -p ${scratch} -t tmp.cruxreport.XXXXXXXXXX)
 
   trap "echo \"removing ${scratch}\" ; rm -rf \"${scratch}\"" RETURN
-  trap "echo \"removing ${scratch}\" ; rm -rf \"${scratch}\"" RETURN
 
   echo "Number of Peptides: " >> "${out_file}"
   cat ${STP_OUTDIR_CRUX}/modsequencespsms.txt | \
@@ -98,9 +97,17 @@ report_crux () {
   cat ${STP_OUTDIR_CRUX}/proteinGroups.txt | \
       sort | uniq | wc -l >> "${out_file}"
 
-  curl -F chat_id="${TARGET_CHAT_ID}" \
-    -F document=@"${out_file}" \
-    https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument
+  echo "Modified AA count in PSM per modification mass: " >> "${out_file}"
+  cat ${STP_OUTDIR_CRUX}/modsequencespsms.txt | \
+      grep -oP "\[.*?\]" | sort | uniq -c >> "${out_file}"
+
+  echo "Modified AA count in Peptide per modification mass: " >> "${out_file}"
+  cat ${STP_OUTDIR_CRUX}/modsequences.txt | \
+      grep -oP "\[.*?\]" | sort | uniq -c >> "${out_file}"
+
+  #curl -F chat_id="${TARGET_CHAT_ID}" \
+  #  -F document=@"${out_file}" \
+  #  https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument
 
   curl -F chat_id="${TARGET_CHAT_ID}" \
     -F text="$( cat "${out_file}")" \
