@@ -30,7 +30,7 @@ run_crux () {
     fi
   fi
 
-  [[ $DEFAULTED_PARAMS == 1 && $DEFAULTED_FASTA == 1 ]] && return 1
+  if [[ $DEFAULTED_PARAMS -eq 1 ]] && [[ $DEFAULTED_FASTA -eq 1 ]] ; then return 1 ; fi
 
   "${STP_CRUXBINARY}" pipeline \
       --output-dir ${STP_OUTDIR_CRUX} \
@@ -73,6 +73,11 @@ run_crux () {
       ${STP_OUTDIR_CRUX}/qsig_percolator.target.proteins.txt ProteinGroupId > \
       ${STP_OUTDIR_CRUX}/proteinGroups.txt
 
+  "${STP_RSCRIPT_EXE}" \
+    --vanilla ./utils/plot_mass_shifts.R \
+    --file "${STP_OUTDIR_CRUX}/qsig_percolator.target.psms.txt" \
+    --out "${STP_OUTDIR_CRUX}/out_png.png"
+
   # TODO check if it is posible to just use the path to the file instead of changing
   # the working diretory
 }
@@ -112,6 +117,10 @@ report_crux () {
   curl -F chat_id="${TARGET_CHAT_ID}" \
     -F text="$( cat "${out_file}")" \
     https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
+
+  curl -F chat_id="${TARGET_CHAT_ID}" \
+    -F document=@"${STP_OUTDIR_CRUX}/out_png.png" -F caption="Mass Shifts" \
+    https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument
 }
 
 # TODO, crux writes a line 

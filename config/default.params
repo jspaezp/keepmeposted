@@ -1491,11 +1491,11 @@ num_threads=0
 # tolerance. The units of the mass tolerance is controlled by the parameter
 # "peptide_mass_units". 
 # Available for comet.
-peptide_mass_tolerance=3
+peptide_mass_tolerance=20
 
 # 0=amu, 1=mmu, 2=ppm.
 # Available for comet.
-peptide_mass_units=0
+peptide_mass_units=2
 
 # Automatically estimate optimal value for the peptide_mass_tolerancel parameter
 # from the spectra themselves. false=no estimation, warn=try to estimate but use
