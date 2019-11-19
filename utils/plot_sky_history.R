@@ -58,8 +58,36 @@ opt_parser <- OptionParser(option_list=option_list)
 opt <- parse_args(opt_parser)
 
 require(tidyverse)
+require(lubridate)
 
-dt <- read_tsv(opt$file) %>% 
+dt <- read_tsv(opt$file)
+
+# Hacky solution to add the replicate number as hours to the date
+dt <- dt %>%
+    mutate(
+        run_date = mdy(
+            gsub("(^\\d+).*",
+                 "\\1",
+                 FileName)),
+        run_rep = as.numeric(
+             gsub(".*(Std|std).*?(\\d*).*.raw",
+             "\\2",
+             FileName))
+    ) 
+
+max_reps <- max(dt$run_rep, na.rm = TRUE)
+hour_step <- hours(floor(24/max_reps))
+
+dt <- mutate(
+    dt,
+    run_datetime = run_date + 
+        (max_reps * 
+            ifelse(is.na(run_rep),
+                   0, run_rep))
+    )
+
+
+dt <- dt %>% 
     as_tibble() %>% 
     mutate(
        Times = purrr::map(
@@ -72,10 +100,10 @@ dt <- read_tsv(opt$file) %>%
     unnest(cols = c(Times, Intensities))
 
 dt2 <- dt %>% 
-   group_by(PeptideModifiedSequence, FileName, Times ) %>%
+   group_by(PeptideModifiedSequence, FileName, Times, run_datetime) %>%
    mutate(time_sum = sum((Intensities))) %>%
    ungroup() %>%
-   group_by(PeptideModifiedSequence, FileName) %>%
+   group_by(PeptideModifiedSequence, FileName, run_datetime) %>%
    mutate(apex = unique(Times[time_sum == max(time_sum)])) %>%
    mutate(apex_close = (Times < (apex + 0.25)) & (Times > (apex - 0.25))) %>%
    filter(apex_close)
@@ -83,12 +111,12 @@ dt2 <- dt %>%
 
 delta_rt_gg <- dt2  %>%
     ungroup() %>%
-    select(PeptideModifiedSequence, FileName, apex) %>% 
+    select(PeptideModifiedSequence, FileName, apex, run_datetime) %>% 
     unique() %>%
     group_by(PeptideModifiedSequence) %>%
     mutate(RTvsMedian = apex - median(apex)) %>%   
     ggplot(
-        aes(x = FileName,
+        aes(x = run_datetime,
             y = RTvsMedian,
             colour = PeptideModifiedSequence,
             group = PeptideModifiedSequence)) + 
@@ -99,12 +127,12 @@ delta_rt_gg <- dt2  %>%
 
 
 intensities_gg <- dt2 %>% 
-    group_by(PeptideModifiedSequence, FileName) %>%
+    group_by(PeptideModifiedSequence, FileName, run_datetime) %>%
     summarise(integral = trapz(Times, Intensities)) %>%
     ungroup() %>%
     mutate(FileName = as.factor(FileName)) %>%
     ggplot(
-        aes(x = FileName,
+        aes(x = run_datetime,
             y = integral ,
             colour = PeptideModifiedSequence,
             group = PeptideModifiedSequence)) +

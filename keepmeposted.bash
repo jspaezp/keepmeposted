@@ -93,8 +93,8 @@ main_loop () {
           ls -lcth $new_ms_files |& tee ${FLAGS_DIR}/message.log
           echo "Found Something"
 
-          curl -F chat_id="${TARGET_CHAT_ID}" -F text="New File Found in the directory" \
-              https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
+          # curl -F chat_id="${TARGET_CHAT_ID}" -F text="New File Found in the directory" \
+          #     https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
           curl -F chat_id="${TARGET_CHAT_ID}" -F text="$(cat ${FLAGS_DIR}/message.log)" \
              https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
 
@@ -118,7 +118,7 @@ main_loop () {
             run_crux "${ms_file}" && report_crux "${ms_file}"
           done
           
-          for irt_standard_name in $( for i in $new_ms_files ; do echo "${i}" | grep -P "std" ; done )
+          for irt_standard_name in $( for i in $new_ms_files ; do echo "${i}" | grep -P "std|Std" ; done )
           do
             echo "Running report for ${irt_standard_name}"
             report_standard "${irt_standard_name}"

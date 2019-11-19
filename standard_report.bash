@@ -52,7 +52,7 @@ report_standard () {
   "${STP_SKYLINE_RUNNER}" \
     --import-all="$(dirname "${@}")" \
     --import-on-or-after="$(date --date '2 weeks ago')" \
-    --import-filename-pattern=".*std.*" \
+    --import-filename-pattern=".*(std|Std).*" \
     --in="${STP_SKYLINE_BASE_FILE}" \
     --out="${SCRATCH}/sky.sky" \
     --chromatogram-file="${SCRATCH}/transitions_history.tsv" \

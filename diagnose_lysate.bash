@@ -7,6 +7,7 @@ run_crux () {
     if [[ -e "${FASTA_FILE}" ]]; then
       echo "Found fasta file in directory, will use it for search"
       echo "${FASTA_FILE}"
+      DEFAULTED_FASTA=0
     else
       echo "Unable to find a correct fasta file for the search, returning to default"
       FASTA_FILE="${STP_FASTA}"
@@ -22,6 +23,7 @@ run_crux () {
     if [[ -e "${PARAMS_FILE}" ]]; then
       echo "Found parameters file in directory, will use it for search"
       echo "${PARAMS_FILE}"
+      DEFAULTED_PARAMS=0
     else
       PARAMS_FILE="${STP_DEF_CRUXPARAMS}"
       echo "Not found parameters file in directory, will use the default"
@@ -109,6 +111,13 @@ report_crux () {
   echo "Modified AA count in Peptide per modification mass: " >> "${out_file}"
   cat ${STP_OUTDIR_CRUX}/modsequences.txt | \
       grep -oP "\[.*?\]" | sort | uniq -c >> "${out_file}"
+  
+  echo "Number of peptides per missed cleavage (trypsin): " >> "${out_file}"
+  cat ${STP_OUTDIR_CRUX}/modsequences.txt | \
+      grep -P "[KR]\s+$" | \
+      sed 's/[^KR]//g' | \
+      awk '{ print length - 1}' |\
+      sort | uniq -c >> "${out_file}"
 
   #curl -F chat_id="${TARGET_CHAT_ID}" \
   #  -F document=@"${out_file}" \
